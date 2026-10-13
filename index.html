@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#101318">
+  <meta name="description" content="FullBody — seu treino, seu ritmo, sua evolução.">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+  <title>FullBody</title>
+</head>
+<body>
+  <div id="app" class="app-shell">
+    <header class="topbar">
+      <button type="button" class="brand" data-action="go" data-view="inicio" aria-label="Ir para início">
+        <span class="brand-mark">F</span><span>Full<span class="brand-accent">Body</span></span>
+      </button>
+      <div class="topbar-right"><span id="top-date" class="top-date"></span><button type="button" class="icon-button" data-action="go" data-view="configuracoes" aria-label="Configurações" title="Configurações">⚙</button><button type="button" class="icon-button" data-action="toggle-theme" aria-label="Alternar tema" title="Alternar tema">◐</button></div>
+    </header>
+    <main id="main" class="main-content" tabindex="-1"></main>
+    <nav class="bottom-nav" aria-label="Navegação principal">
+      <button type="button" data-action="go" data-view="inicio" class="nav-item active"><span class="nav-icon">⌂</span><span>Início</span></button>
+      <button type="button" data-action="go" data-view="exercicios" class="nav-item"><span class="nav-icon">▦</span><span>Exercícios</span></button>
+      <button type="button" data-action="go" data-view="treinos" class="nav-item"><span class="nav-icon nav-start">＋</span><span>Treinar</span></button>
+      <button type="button" data-action="go" data-view="historico" class="nav-item"><span class="nav-icon">◷</span><span>Histórico</span></button>
+      <button type="button" data-action="go" data-view="evolucao" class="nav-item"><span class="nav-icon">↗</span><span>Evolução</span></button>
+    </nav>
+  </div>
+  <div id="modal-root"></div>
+  <input id="import-file" type="file" accept="application/json,.json" hidden>
+  <script src="app.js"></script>
+</body>
+</html>
