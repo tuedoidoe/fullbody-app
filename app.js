@@ -67,8 +67,23 @@
     return ['A','B','C','D'].filter(b=>unique.includes(b)).concat(unique.filter(b=>!['A','B','C','D'].includes(b)));
   }
   function currentBlock(active=state.active){return blockIds(active).find(b=>active.exercises.some(e=>(e.block||'A')===b&&!isExerciseDone(e)))||null;}
-  function currentExercise(active=state.active){const b=currentBlock(active);return b?active.exercises.find(e=>(e.block||'A')===b&&!isExerciseDone(e))||null:null;}
   function blockProgress(block,active=state.active){const exs=active.exercises.filter(e=>(e.block||'A')===block);const total=exs.reduce((n,e)=>n+e.sets.length,0);const done=exs.reduce((n,e)=>n+e.sets.filter(s=>s.done).length,0);return {total,done,percent:total?Math.round(done/total*100):0,complete:total>0&&done===total};}
+  // In circuit mode, the user completes the same set number for every exercise before resting.
+  function currentRoundIndex(block,active=state.active){
+    if(!active)return 0;
+    const exs=active.exercises.filter(e=>(e.block||'A')===block);
+    const maxSets=Math.max(0,...exs.map(e=>e.sets.length));
+    for(let i=0;i<maxSets;i++){const round=exs.filter(e=>i<e.sets.length);if(round.some(e=>!e.sets[i].done))return i;}
+    return maxSets;
+  }
+  function roundComplete(block,index,active=state.active){
+    const round=(active?.exercises||[]).filter(e=>(e.block||'A')===block&&index<e.sets.length);
+    return round.length>0&&round.every(e=>e.sets[index].done);
+  }
+  function roundRestSeconds(block,active=state.active){
+    const exs=(active?.exercises||[]).filter(e=>(e.block||'A')===block);
+    return Math.max(1,...exs.map(e=>Number(e.rest)||60));
+  }
   function applyTheme(){document.documentElement.dataset.theme=state.theme==='light'?'light':'dark';const meta=$('meta[name="theme-color"]');if(meta)meta.content=state.theme==='light'?'#f4f6f8':'#101318';}
   function pageHead(kicker,title,subtitle,action=''){return `<div class="page-head"><div><div class="eyebrow">${kicker}</div><h1 class="page-title">${title}</h1>${subtitle?`<p class="page-subtitle">${subtitle}</p>`:''}</div>${action}</div>`;}
   function button(label,action,cls='btn',attrs=''){return `<button type="button" class="${cls}" data-action="${action}" ${attrs}>${label}</button>`;}
@@ -93,29 +108,48 @@
   }
   function renderTreinos(){
     const routine=state.routines.find(r=>r.id===(state.setup.selectedRoutineId||'routine-inicial'))||state.routines[0];
-    const chosen=state.setup.mode==='manual'?state.exercises.filter(e=>(state.setup.selectedIds||[]).includes(e.id)):state.exercises.filter(e=>routine && routine.exerciseIds.includes(e.id));
-    const routineCards=state.routines.map(r=>`<div class="routine-item"><div class="list-content"><div class="list-title">${escapeHtml(r.name)}</div><div class="muted small">${r.exerciseIds.filter(id=>state.exercises.some(e=>e.id===id)).length} exercícios · ${escapeHtml(r.description||'Rotina personalizada')}</div></div><div style="display:flex;gap:6px;flex-wrap:wrap">${button(r.id===routine?.id?'Selecionada':'Usar rotina','use-routine','btn btn-small '+(r.id===routine?.id?'btn-primary':''),'data-id="'+escapeHtml(r.id)+'"')}${r.id!=='routine-inicial'?button('Excluir','delete-routine','btn btn-small btn-ghost','data-id="'+escapeHtml(r.id)+'"'):''}</div></div>`).join('');
-    const blockCards=['A','B','C','D'].map(b=>{const list=chosen.filter(e=>(e.block||'A')===b);if(!list.length)return '';const meta=BLOCKS[b]||BLOCKS.D;return `<div class="block-card"><div class="block-letter">BLOCO ${b}</div><h3>${escapeHtml(meta.title)}</h3><p>${escapeHtml(meta.subtitle)}</p><div class="divider"></div><div class="list">${list.map((e,i)=>`<div class="routine-item"><div><div class="list-title">${escapeHtml(e.name)}</div><div class="muted small">${e.sets} séries × ${escapeHtml(e.reps)} repetições</div></div><span class="badge-count">${i+1}</span></div>`).join('')}</div><div class="block-meta"><span>${list.length} exercícios</span><span>${list.reduce((s,e)=>s+Number(e.sets||0),0)} séries planejadas</span></div></div>`;}).join('');
-    const modeRoutine=state.setup.mode!=='manual';
-    return `${pageHead('PLANEJAMENTO','Preparar treino','Escolha sua rotina inicial ou monte uma sessão manualmente.')}${state.active?`<section class="panel" style="margin-bottom:18px;border-color:var(--accent)"><div class="workout-header"><div><div class="eyebrow">SESSÃO SALVA</div><div class="panel-title">Você tem um treino em andamento</div><div class="muted small">Seu progresso foi salvo neste dispositivo.</div></div>${button('Retomar →','resume-workout','btn btn-primary')}</div></section>`:''}<div class="grid grid-2" style="margin-bottom:18px"><button type="button" class="panel" data-action="setup-mode" data-mode="routine" style="text-align:left;border-color:${modeRoutine?'var(--accent)':'var(--line)'};color:var(--text)"><div class="block-letter">ROTINA SALVA</div><div class="panel-title" style="margin-top:7px">${escapeHtml(routine?.name||'Treino Inicial em Blocos')}</div><div class="muted small">${routine?.exerciseIds.filter(id=>state.exercises.some(e=>e.id===id)).length||0} exercícios · rotina reutilizável</div></button><button type="button" class="panel" data-action="setup-mode" data-mode="manual" style="text-align:left;border-color:${!modeRoutine?'var(--accent)':'var(--line)'};color:var(--text)"><div class="block-letter">PERSONALIZADO</div><div class="panel-title" style="margin-top:7px">Montar treino manual</div><div class="muted small">Selecione os exercícios desta sessão</div></button></div><section class="panel" style="margin-bottom:18px"><div class="form-row"><div class="field" style="margin:0"><label for="workout-date">Data do treino</label><input id="workout-date" type="date" value="${escapeHtml(state.setup.date||todayLocal())}"></div><div class="field" style="margin:0"><label>Seleção atual</label><div style="padding:11px 0;font-weight:800">${chosen.length} exercícios · ${chosen.reduce((n,e)=>n+Number(e.sets||0),0)} séries</div></div></div>${!modeRoutine?`<div class="divider"></div><div class="panel-title" style="margin-bottom:10px">Selecione os exercícios</div><div class="grid grid-2">${state.exercises.map(e=>`<label class="check-row"><input type="checkbox" data-action="select-exercise" data-id="${escapeHtml(e.id)}" ${(state.setup.selectedIds||[]).includes(e.id)?'checked':''}><span><strong>${escapeHtml(e.name)}</strong><br><span class="muted small">Bloco ${escapeHtml(e.block||'A')} · ${e.sets} séries</span></span></label>`).join('')}</div>`:''}<div class="inline-note">Você poderá ajustar repetições e cargas durante o treino. A sessão usa uma cópia dos parâmetros atuais para preservar o histórico.</div>${!modeRoutine?button('Salvar seleção como rotina','save-routine','btn btn-small'):''}</section>${modeRoutine?`<div class="section-row"><h2>Rotinas salvas</h2><span class="muted small">${state.routines.length} rotinas</span></div><section class="panel" style="margin-bottom:18px"><div class="list">${routineCards}</div></section>`:''}<div class="section-row"><h2>Prévia da sequência</h2><span class="muted small">A → B → C</span></div><div class="grid" style="gap:12px">${blockCards||emptyState('＋','Selecione exercícios','Escolha pelo menos um exercício para começar.')}</div><div class="bottom-actions"><div><div class="muted small">Pronto para começar?</div><strong>${chosen.length} exercícios selecionados</strong></div>${button('Iniciar treino →','start-workout','btn btn-primary',chosen.length?'':'disabled')}</div>`;
+    const chosen=state.exercises.filter(e=>routine && routine.exerciseIds.includes(e.id));
+    const blockCards=['A','B','C','D'].map(b=>{
+      const list=chosen.filter(e=>(e.block||'A')===b);if(!list.length)return '';
+      const meta=BLOCKS[b]||BLOCKS.D;
+      return `<div class="block-card"><div class="block-letter">BLOCO ${b}</div><h3>${escapeHtml(meta.title)}</h3><p>${escapeHtml(meta.subtitle)}</p><div class="divider"></div><div class="list">${list.map((e,i)=>`<div class="routine-item"><div class="exercise-num">${i+1}</div><div class="list-content"><div class="list-title">${escapeHtml(e.name)}</div><div class="muted small">${e.sets} séries × ${escapeHtml(e.reps)} repetições</div></div></div>`).join('')}</div><div class="block-meta"><span>${list.length} exercícios</span><span>${list.reduce((sum,e)=>sum+Number(e.sets||0),0)} séries planejadas</span></div></div>`;
+    }).join('');
+    const routineOptions=state.routines.length>1?`<div class="field"><label for="routine-select">Rotina atual</label><select id="routine-select">${state.routines.map(r=>`<option value="${escapeHtml(r.id)}" ${r.id===routine?.id?'selected':''}>${escapeHtml(r.name)}</option>`).join('')}</select></div>`:'';
+    return `${pageHead('PLANEJAMENTO','Preparar treino','Mantenha uma rotina salva e edite o nome ou os exercícios quando quiser.')} ${state.active?`<section class="panel" style="margin-bottom:18px;border-color:var(--accent)"><div class="workout-header"><div><div class="eyebrow">SESSÃO SALVA</div><div class="panel-title">Você tem um treino em andamento</div><div class="muted small">Seu progresso foi salvo neste dispositivo.</div></div>${button('Retomar →','resume-workout','btn btn-primary')}</div></section>`:''}<section class="panel" style="margin-bottom:18px"><div class="workout-header"><div><div class="eyebrow">ROTINA REUTILIZÁVEL</div><h2 style="margin:0 0 6px;font-size:24px">${escapeHtml(routine?.name||'Minha rotina')}</h2><div class="muted small">${chosen.length} exercícios · ${chosen.reduce((n,e)=>n+Number(e.sets||0),0)} séries</div></div>${button('Editar rotina','edit-routine','btn btn-primary','data-id="'+escapeHtml(routine?.id||'routine-inicial')+'"')}</div>${routineOptions}<div class="inline-note">Esta rotina fica salva neste dispositivo. Alterar a rotina não modifica treinos que já foram registrados no histórico.</div></section><section class="panel" style="margin-bottom:18px"><div class="field" style="margin-bottom:0"><label for="workout-date">Data do treino</label><input id="workout-date" type="date" value="${escapeHtml(state.setup.date||todayLocal())}"></div></section><div class="section-row"><h2>Prévia da sequência</h2><span class="muted small">A → B → C</span></div><div class="grid" style="gap:12px">${blockCards||emptyState('＋','Rotina sem exercícios','Edite a rotina para selecionar ao menos um exercício.',button('Editar rotina','edit-routine','btn btn-primary','data-id="'+escapeHtml(routine?.id||'routine-inicial')+'"'))}</div><div class="bottom-actions"><div><div class="muted small">Pronto para começar?</div><strong>${chosen.length} exercícios selecionados</strong></div>${button('Iniciar treino →','start-workout','btn btn-primary',chosen.length?'':'disabled')}</div>`;
   }
+  
   function renderSession(){
     const a=state.active;if(!a)return emptyState('＋','Nenhum treino em andamento','Comece uma nova sessão para registrar exercícios.',button('Preparar treino','go','btn btn-primary','data-view="treinos"'));
-    const blocks=blockIds(a),current=currentBlock(a),activeEx=currentExercise(a),total=setCount(a),done=doneSetCount(a),pct=total?Math.round(done/total*100):100;
+    const blocks=blockIds(a),current=currentBlock(a),total=setCount(a),done=doneSetCount(a),pct=total?Math.round(done/total*100):100;
     const chips=blocks.map(b=>{const p=blockProgress(b,a),isCur=current===b;return `<span class="block-chip ${p.complete?'complete':''} ${isCur?'current':''}">${p.complete?'✓ ':''}Bloco ${escapeHtml(b)} · ${p.done}/${p.total}</span>`;}).join('');
     const complete=!current;
     let workContent='';
     if(complete){workContent=`<section class="panel" style="text-align:center;padding:30px"><div class="empty-icon">✓</div><h2 style="margin:0 0 8px">Treino concluído!</h2><p class="muted">Você completou todas as séries planejadas. Finalize para salvar o resumo no histórico.</p><div class="stats-grid" style="text-align:left"><div class="stat"><div class="stat-label">Séries feitas</div><div class="stat-value">${done}</div></div><div class="stat"><div class="stat-label">Exercícios</div><div class="stat-value">${a.exercises.filter(isExerciseDone).length}/${a.exercises.length}</div></div></div></section>`;}
     else {
       const meta=BLOCKS[current]||BLOCKS.D;
-      const remaining=a.exercises.filter(e=>(e.block||'A')===current && e.id!==activeEx.id);
-      workContent=`<section class="block-card is-current" style="margin-bottom:14px"><div class="block-letter">BLOCO ${escapeHtml(current)}</div><h2 style="margin:6px 0 5px;font-size:24px;letter-spacing:-.8px">${escapeHtml(meta.title)}</h2><p>${escapeHtml(meta.subtitle)}</p><div class="progress-track"><div class="progress-fill" style="width:${blockProgress(current,a).percent}%"></div></div><div class="block-meta"><span>${blockProgress(current,a).done} de ${blockProgress(current,a).total} séries</span><span>${blockProgress(current,a).percent}%</span></div></section><section class="panel active-exercise"><div class="workout-header"><div><div class="eyebrow">EXERCÍCIO ATUAL</div><h2 style="font-size:22px;line-height:1.2;margin:0 0 6px">${escapeHtml(activeEx.name)}</h2><div class="muted small">${escapeHtml(activeEx.group)} · ${escapeHtml(activeEx.equipment)}</div></div><span class="pill accent">${activeEx.sets.filter(s=>s.done).length}/${activeEx.sets.length} séries</span></div><table class="set-table"><thead><tr><th>Série</th><th>Reps</th><th>Carga (kg)</th><th class="text-right">Feita</th></tr></thead><tbody>${activeEx.sets.map((s,i)=>`<tr class="${s.done?'set-done':''}"><td class="set-index">${i+1}</td><td><input type="number" min="0" step="1" aria-label="Repetições da série ${i+1}" data-action="set-reps" data-ex="${escapeHtml(activeEx.id)}" data-set="${i}" value="${escapeHtml(s.reps)}" ${s.done?'disabled':''}></td><td><input type="number" min="0" step="0.5" aria-label="Carga da série ${i+1} em quilos" data-action="set-weight" data-ex="${escapeHtml(activeEx.id)}" data-set="${i}" value="${escapeHtml(s.weight)}" placeholder="—" ${s.done?'disabled':''}></td><td class="text-right"><input class="set-check" type="checkbox" aria-label="Marcar série ${i+1} concluída" data-action="toggle-set" data-ex="${escapeHtml(activeEx.id)}" data-set="${i}" ${s.done?'checked':''}></td></tr>`).join('')}</tbody></table><div class="inline-note">Marque cada série após executá-la. Os valores de repetições e carga podem ser ajustados antes de concluir a série.</div>${a.rest&&a.rest.endAt?`<div class="rest-banner"><div><div class="muted small">DESCANSO</div><div id="rest-time" class="rest-time">${fmtDuration(Math.max(0,Math.ceil((a.rest.endAt-Date.now())/1000)))}</div></div><div>${button('Pular descanso','skip-rest','btn btn-small')}</div></div>`:`<div class="rest-banner"><div><div class="muted small">DESCANSO SUGERIDO</div><div class="rest-time">${fmtDuration(activeEx.rest||60)}</div></div><div>${button('Iniciar descanso','start-rest','btn btn-small btn-ghost','data-seconds="'+(activeEx.rest||60)+'"')}</div></div>`}</section>${remaining.length?`<section class="panel" style="margin-top:12px"><div class="panel-title">Próximos neste bloco</div><div class="list">${remaining.map((e,i)=>`<div class="routine-item"><div class="exercise-num">${i+2}</div><div class="list-content"><div class="list-title">${escapeHtml(e.name)}</div><div class="muted small">${e.sets.length} séries · ${escapeHtml(a.exercises.find(x=>x.id===e.id).sets[0]?.reps||'')}</div></div><span class="pill">Na sequência</span></div>`).join('')}</div></section>`:''}`;
+      const blockExercises=a.exercises.filter(e=>(e.block||'A')===current);
+      const roundIndex=currentRoundIndex(current,a),roundTotal=Math.max(0,...blockExercises.map(e=>e.sets.length));
+      const roundNo=Math.min(roundIndex+1,Math.max(roundTotal,1));
+      const roundSets=blockExercises.filter(e=>roundIndex<e.sets.length);
+      const roundDone=roundSets.filter(e=>e.sets[roundIndex]?.done).length;
+      const blockP=blockProgress(current,a);
+      const exerciseCards=blockExercises.map((ex,exIdx)=>{
+        const exerciseDone=isExerciseDone(ex);
+        return `<section class="panel active-exercise" style="margin-top:12px;border-color:${exerciseDone?'var(--success)':'var(--line)'}"><div class="workout-header"><div><div class="eyebrow">EXERCÍCIO ${String(exIdx+1).padStart(2,'0')} ${exerciseDone?'· CONCLUÍDO':'· BLOCO '+escapeHtml(current)}</div><h2 style="font-size:20px;line-height:1.2;margin:0 0 6px">${escapeHtml(ex.name)}</h2><div class="muted small">${escapeHtml(ex.group)} · ${escapeHtml(ex.equipment)}</div></div><span class="pill ${exerciseDone?'done':'accent'}">${ex.sets.filter(s=>s.done).length}/${ex.sets.length} séries</span></div><table class="set-table"><thead><tr><th>Série</th><th>Reps</th><th>Carga (kg)</th><th class="text-right">Feita</th></tr></thead><tbody>${ex.sets.map((set,i)=>{
+          const future=i>roundIndex&&!set.done;
+          const disabled=set.done||future;
+          return `<tr class="${set.done?'set-done':''}"><td class="set-index">${i+1}</td><td><input type="number" min="0" step="1" aria-label="${escapeHtml(ex.name)} — repetições da série ${i+1}" data-action="set-reps" data-ex="${escapeHtml(ex.id)}" data-set="${i}" value="${escapeHtml(set.reps)}" ${disabled?'disabled':''}></td><td><input type="number" min="0" step="0.5" aria-label="${escapeHtml(ex.name)} — carga da série ${i+1} em quilos" data-action="set-weight" data-ex="${escapeHtml(ex.id)}" data-set="${i}" value="${escapeHtml(set.weight)}" placeholder="—" ${disabled?'disabled':''}></td><td class="text-right"><input class="set-check" type="checkbox" aria-label="${escapeHtml(ex.name)} — marcar série ${i+1} concluída" data-action="toggle-set" data-ex="${escapeHtml(ex.id)}" data-set="${i}" ${set.done?'checked':''} ${future?'disabled':''}></td></tr>`;
+        }).join('')}</tbody></table><div class="inline-note">${exerciseDone?'Todas as séries deste exercício foram concluídas.':`Faça a série ${Math.min(roundIndex+1,ex.sets.length)} deste exercício nesta rodada. As próximas séries serão liberadas quando todos os exercícios da rodada forem marcados.`}</div></section>`;
+      }).join('');
+      const restBanner=a.rest?.endAt?`<div class="rest-banner"><div><div class="muted small">DESCANSO APÓS ${a.rest.block?`BLOCO ${escapeHtml(a.rest.block)} · `:''}RODADA ${escapeHtml(a.rest.round||roundNo)}</div><div id="rest-time" class="rest-time">${fmtDuration(Math.max(0,Math.ceil((a.rest.endAt-Date.now())/1000)))}</div><div class="muted small">Ao zerar, o FullBody toca um alarme e tenta vibrar.</div></div><div>${button('Pular descanso','skip-rest','btn btn-small')}</div></div>`:`<div class="rest-banner"><div><div class="muted small">RODADA ${roundNo} DE ${Math.max(roundTotal,1)}</div><div class="rest-time">${fmtDuration(roundRestSeconds(current,a))}</div><div class="muted small">Descanso começa depois que todos os exercícios desta rodada forem marcados (${roundDone}/${roundSets.length}).</div></div></div>`;
+      workContent=`<section class="block-card is-current" style="margin-bottom:14px"><div class="block-letter">BLOCO ${escapeHtml(current)}</div><h2 style="margin:6px 0 5px;font-size:24px;letter-spacing:-.8px">${escapeHtml(meta.title)}</h2><p>${escapeHtml(meta.subtitle)}</p><div class="progress-track"><div class="progress-fill" style="width:${blockP.percent}%"></div></div><div class="block-meta"><span>${blockP.done} de ${blockP.total} séries</span><span>${blockP.percent}%</span></div><p style="margin-top:12px">Execute uma série de cada exercício deste bloco; só depois começa o descanso.</p></section>${restBanner}${exerciseCards}`;
     }
     return `${pageHead('TREINO EM ANDAMENTO',escapeHtml(a.name),`Iniciado em ${fmtDate(a.date)} às ${fmtTime(a.startedAtOriginal)}.`)}<div class="workout-header"><div class="timer-box"><div id="workout-timer" class="timer-number">${fmtDuration(getElapsedSeconds(a))}</div><div class="timer-label">Tempo de treino</div></div><div style="display:flex;gap:8px;flex-wrap:wrap">${button(a.status==='paused'?'Retomar cronômetro':'Pausar cronômetro','toggle-pause','btn btn-ghost')}${button('Finalizar treino','finish-workout','btn btn-primary')}</div></div><div class="panel" style="margin-bottom:14px;padding:14px"><div style="display:flex;justify-content:space-between;gap:10px;align-items:center"><div><strong>Progresso geral</strong><div class="muted small">${done} de ${total} séries concluídas</div></div><strong style="font-size:22px">${pct}%</strong></div><div class="progress-track"><div class="progress-fill" style="width:${pct}%"></div></div></div><div class="block-nav">${chips}</div>${workContent}<div class="bottom-actions"><div><div class="muted small">Treino salvo automaticamente</div><strong>${current?`Bloco ${current}`:'Todas as séries concluídas'}</strong></div>${button('Finalizar e salvar','finish-workout','btn btn-primary')}</div>`;
   }
+  
   function renderHistory(){
     const list=state.history.slice().sort((a,b)=>(b.finishedAt||b.date||'').localeCompare(a.finishedAt||a.date||''));
-    return `${pageHead('REGISTROS','Histórico de treinos','Consulte suas sessões anteriores e os detalhes de cada exercício.')}${list.length?`<section class="panel"><div class="list">${list.map(h=>`<div class="list-row"><div class="exercise-num">✓</div><div class="list-content"><div class="list-title">${escapeHtml(h.name||'Treino')}</div><div class="muted small">${fmtDate(h.date)} · ${h.exerciseCount??h.exercises?.length??0} exercícios · ${h.completedSets??0}/${h.plannedSets??0} séries</div></div><div class="list-row-right"><div style="font-weight:800">${fmtDuration(h.durationSeconds)}</div><button class="btn btn-small btn-ghost" data-action="history-detail" data-id="${escapeHtml(h.id)}">Detalhes</button></div></div>`).join('')}</div></section>`:emptyState('◷','Seu histórico começa aqui','Finalize seu primeiro treino para guardar data, duração, séries e cargas.',button('Iniciar primeiro treino','go','btn btn-primary','data-view="treinos"'))}`;
+    return `${pageHead('REGISTROS','Histórico de treinos','Consulte suas sessões anteriores e os detalhes de cada exercício.')}${list.length?`<section class="panel"><div class="list">${list.map(h=>`<div class="list-row"><div class="exercise-num">✓</div><div class="list-content"><div class="list-title">${escapeHtml(h.name||'Treino')}</div><div class="muted small">${fmtDate(h.date)} · ${h.exerciseCount??h.exercises?.length??0} exercícios · ${h.completedSets??0}/${h.plannedSets??0} séries</div></div><div class="list-row-right"><div style="font-weight:800">${fmtDuration(h.durationSeconds)}</div><button type="button" class="btn btn-small btn-ghost" data-action="history-detail" data-id="${escapeHtml(h.id)}">Detalhes</button></div></div>`).join('')}</div></section>`:emptyState('◷','Seu histórico começa aqui','Finalize seu primeiro treino para guardar data, duração, séries e cargas.',button('Iniciar primeiro treino','go','btn btn-primary','data-view="treinos"'))}`;
   }
   function svgLineChart(points,label){
     if(!points||points.length<2)return `<div class="empty-state" style="padding:20px 0"><div class="muted small">Adicione ao menos dois registros para visualizar o gráfico.</div></div>`;
@@ -142,7 +176,7 @@
     return `${pageHead('DADOS PESSOAIS','Meu perfil','Mantenha suas informações atualizadas e registre o peso ao longo do tempo.',button('＋ Registrar peso','add-weight','btn btn-primary'))}<form id="profile-form" class="panel"><div class="grid grid-2"><div class="field"><label for="profile-name">Nome</label><input id="profile-name" name="name" value="${escapeHtml(p.name)}" placeholder="Como gostaria de ser chamado?"></div><div class="field"><label for="profile-birthdate">Data de nascimento</label><input id="profile-birthdate" name="birthdate" type="date" value="${escapeHtml(p.birthdate)}"></div></div><div class="form-row"><div class="field"><label for="profile-sex">Sexo (opcional)</label><select id="profile-sex" name="sex"><option value="">Prefiro não informar</option><option ${p.sex==='Masculino'?'selected':''}>Masculino</option><option ${p.sex==='Feminino'?'selected':''}>Feminino</option><option ${p.sex==='Outro'?'selected':''}>Outro</option></select></div><div class="field"><label for="profile-goal">Objetivo principal</label><select id="profile-goal" name="goal">${['Hipertrofia','Ganho de força','Emagrecimento','Condicionamento','Manutenção'].map(x=>`<option ${p.goal===x?'selected':''}>${x}</option>`).join('')}</select></div></div><div class="form-row"><div class="field"><label for="profile-height">Altura (cm)</label><input id="profile-height" name="height" type="number" min="1" step="1" value="${escapeHtml(p.height)}" placeholder="Ex.: 175"></div><div class="field"><label for="profile-weight">Peso atual (kg)</label><input id="profile-weight" name="weight" type="number" min="1" step="0.1" value="${escapeHtml(p.weight)}" placeholder="Ex.: 85,5"></div></div><div class="field"><label for="profile-target">Peso desejado (kg, opcional)</label><input id="profile-target" name="targetWeight" type="number" min="1" step="0.1" value="${escapeHtml(p.targetWeight)}"></div><div class="field"><label for="profile-notes">Observações pessoais</label><textarea id="profile-notes" name="notes" placeholder="Preferências, limitações ou lembretes">${escapeHtml(p.notes)}</textarea></div><div class="divider"></div><div class="panel-title">Histórico de peso</div>${state.weightLog.length?`<div class="list">${state.weightLog.slice().sort((a,b)=>b.date.localeCompare(a.date)).map(w=>`<div class="list-row"><div class="list-content"><div class="list-title">${formatNumber(w.weight)} kg</div><div class="muted small">${fmtDate(w.date)}</div></div>${button('Excluir','delete-weight','btn btn-small btn-ghost','data-id="'+escapeHtml(w.id)+'"')}</div>`).join('')}</div>`: `<p class="muted small">Nenhum registro de peso ainda.</p>`}<div class="modal-actions"><button class="btn btn-primary" type="submit">Salvar perfil</button></div></form>`;
   }
   function renderSettings(){
-    return `${pageHead('PREFERÊNCIAS','Configurações','Gerencie o tema e faça cópias de segurança dos seus dados.') }<div class="grid grid-2"><section class="panel"><div class="panel-title">Aparência</div><p class="muted small">Escolha o tema mais confortável para treinar.</p><div class="grid grid-2"><button data-action="set-theme" data-theme="dark" class="btn ${state.theme==='dark'?'btn-primary':''}">◐ Escuro</button><button data-action="set-theme" data-theme="light" class="btn ${state.theme==='light'?'btn-primary':''}">☼ Claro</button></div></section><section class="panel"><div class="panel-title">Backup e restauração</div><p class="muted small">Exporte o perfil, exercícios, treinos e histórico para um arquivo JSON.</p><div class="grid" style="gap:8px">${button('↓ Exportar backup JSON','export-json','btn btn-primary')}${button('↑ Importar backup JSON','import-json','btn')}</div></section><section class="panel"><div class="panel-title">Privacidade e armazenamento</div><p class="muted small">Nesta versão, os dados ficam armazenados localmente no navegador deste dispositivo. Não há conta nem servidor de sincronização.</p><p class="muted small">Faça backups regulares e guarde o arquivo fora do celular para reduzir o risco de perda.</p></section><section class="panel"><div class="panel-title">Gerenciamento dos dados</div><p class="muted small">A exclusão de dados é permanente neste dispositivo. Exporte uma cópia antes de continuar.</p>${button('Apagar todos os dados','reset-data','btn btn-danger')}</section></div><p class="inline-note">Versão inicial do FullBody · os dados de treino são salvos automaticamente neste navegador.</p>`;
+    return `${pageHead('PREFERÊNCIAS','Configurações','Gerencie o tema e faça cópias de segurança dos seus dados.') }<div class="grid grid-2"><section class="panel"><div class="panel-title">Aparência</div><p class="muted small">Escolha o tema mais confortável para treinar.</p><div class="grid grid-2"><button data-action="set-theme" data-theme="dark" class="btn ${state.theme==='dark'?'btn-primary':''}">◐ Escuro</button><button data-action="set-theme" data-theme="light" class="btn ${state.theme==='light'?'btn-primary':''}">☼ Claro</button></div></section><section class="panel"><div class="panel-title">Backup e restauração</div><p class="muted small">Exporte o perfil, exercícios, treinos e histórico para um arquivo JSON.</p><div class="grid" style="gap:8px">${button('↓ Exportar backup JSON','export-json','btn btn-primary')}${button('↑ Importar backup JSON','import-json','btn')}</div></section><section class="panel"><div class="panel-title">Privacidade e armazenamento</div><p class="muted small">Seus dados ficam no armazenamento local deste navegador. O GitHub Pages hospeda apenas os arquivos do aplicativo e não recebe automaticamente os treinos finalizados.</p><p class="muted small">A sincronização automática entre dispositivos exige conectar um backend autenticado (por exemplo, Supabase). Até configurar esse serviço, use Exportar/Importar backup JSON. Não coloque dados pessoais em um repositório público.</p></section><section class="panel"><div class="panel-title">Gerenciamento dos dados</div><p class="muted small">A exclusão de dados é permanente neste dispositivo. Exporte uma cópia antes de continuar.</p>${button('Apagar todos os dados','reset-data','btn btn-danger')}</section></div><p class="inline-note">O alarme toca três bipes e tenta vibrar quando o descanso chega a zero. Navegadores podem limitar som/vibração com o aplicativo em segundo plano ou com a tela bloqueada.</p><p class="inline-note">Os dados são salvos localmente; o GitHub Pages não sincroniza registros automaticamente com um servidor.</p>`;
   }
   function render(){
     applyTheme();
@@ -170,24 +204,29 @@
       root.innerHTML=`<div class="modal-backdrop" data-action="close-modal"><section class="modal" role="dialog" aria-modal="true"><h2>Finalizar treino</h2><p class="muted">Confira o resumo antes de salvar no histórico.</p><div class="stats-grid"><div class="stat"><div class="stat-label">Duração</div><div class="stat-value" style="font-size:18px">${fmtDuration(getElapsedSeconds(a))}</div></div><div class="stat"><div class="stat-label">Exercícios concluídos</div><div class="stat-value">${finished}/${a.exercises.length}</div></div><div class="stat"><div class="stat-label">Séries concluídas</div><div class="stat-value">${doneSetCount(a)}/${setCount(a)}</div></div><div class="stat"><div class="stat-label">Repetições</div><div class="stat-value">${a.exercises.reduce((n,e)=>n+e.sets.filter(s=>s.done).reduce((m,s)=>m+(Number(s.reps)||0),0),0)}</div></div></div>${incomplete.length?`<div class="panel" style="margin-bottom:12px"><div class="panel-title">Exercícios incompletos</div><p class="muted small">${incomplete.map(e=>escapeHtml(e.name)).join(' · ')}</p></div>`:''}<form id="finish-form"><div class="field"><label for="finish-notes">Observações finais (opcional)</label><textarea id="finish-notes" name="notes" placeholder="Como foi o treino hoje?">${escapeHtml(a.notes||'')}</textarea></div><div class="modal-actions"><button type="button" class="btn btn-ghost" data-action="close-modal">Continuar treino</button><button type="submit" class="btn btn-primary">Salvar no histórico</button></div></form></section></div>`;
     } else if(modal.type==='history'){
       const h=state.history.find(x=>x.id===modal.id);if(!h){state.modal=null;return;}
-      root.innerHTML=`<div class="modal-backdrop" data-action="close-modal"><section class="modal" role="dialog" aria-modal="true"><h2>${escapeHtml(h.name||'Treino')}</h2><p class="muted">${fmtDate(h.date)} · ${fmtTime(h.startedAtOriginal)}–${fmtTime(h.finishedAt)}</p><div class="stats-grid"><div class="stat"><div class="stat-label">Duração</div><div class="stat-value" style="font-size:17px">${fmtDuration(h.durationSeconds)}</div></div><div class="stat"><div class="stat-label">Séries feitas</div><div class="stat-value">${h.completedSets||0}</div></div></div><div class="list">${(h.exercises||[]).map(e=>`<div class="routine-item"><div class="list-content"><div class="list-title">${escapeHtml(e.name)}</div><div class="muted small">${escapeHtml(e.group||'')} · Bloco ${escapeHtml(e.block||'A')}</div><div class="muted small" style="margin-top:5px">${e.sets.map((s,i)=>`S${i+1}: ${s.done?'✓':'—'} ${escapeHtml(s.reps)} reps${s.weight!==''?` · ${escapeHtml(s.weight)} kg`:''}`).join(' | ')}</div></div><span class="pill ${isExerciseDone(e)?'done':''}">${e.sets.filter(s=>s.done).length}/${e.sets.length}</span></div>`).join('')}</div>${h.notes?`<div class="divider"></div><div class="panel-title">Observações</div><p class="muted">${escapeHtml(h.notes)}</p>`:''}<div class="modal-actions"><button type="button" data-action="copy-history" data-id="${escapeHtml(h.id)}" class="btn">Usar como base para novo treino</button><button type="button" class="btn btn-primary" data-action="close-modal">Fechar</button></div></section></div>`;
+      root.innerHTML=`<div class="modal-backdrop" data-action="close-modal"><section class="modal" role="dialog" aria-modal="true"><h2>${escapeHtml(h.name||'Treino')}</h2><p class="muted">${fmtDate(h.date)} · ${fmtTime(h.startedAtOriginal)}–${fmtTime(h.finishedAt)}</p><div class="stats-grid"><div class="stat"><div class="stat-label">Duração</div><div class="stat-value" style="font-size:17px">${fmtDuration(h.durationSeconds)}</div></div><div class="stat"><div class="stat-label">Séries feitas</div><div class="stat-value">${h.completedSets||0}</div></div></div><div class="list">${(h.exercises||[]).map(e=>`<div class="routine-item"><div class="list-content"><div class="list-title">${escapeHtml(e.name)}</div><div class="muted small">${escapeHtml(e.group||'')} · Bloco ${escapeHtml(e.block||'A')}</div><div class="muted small" style="margin-top:5px">${e.sets.map((s,i)=>`S${i+1}: ${s.done?'✓':'—'} ${escapeHtml(s.reps)} reps${s.weight!==''?` · ${escapeHtml(s.weight)} kg`:''}`).join(' | ')}</div></div><span class="pill ${isExerciseDone(e)?'done':''}">${e.sets.filter(s=>s.done).length}/${e.sets.length}</span></div>`).join('')}</div>${h.notes?`<div class="divider"></div><div class="panel-title">Observações</div><p class="muted">${escapeHtml(h.notes)}</p>`:''}<div class="modal-actions"><button type="button" data-action="copy-history" data-id="${escapeHtml(h.id)}" class="btn">Atualizar rotina com este treino</button><button type="button" class="btn btn-primary" data-action="close-modal">Fechar</button></div></section></div>`;
     } else if(modal.type==='reset'){
       root.innerHTML=`<div class="modal-backdrop" data-action="close-modal"><section class="modal" role="dialog" aria-modal="true"><h2>Apagar todos os dados?</h2><p>Esta ação apagará perfil, exercícios personalizados, treinos e histórico armazenados neste navegador. Exporte um backup antes de continuar.</p><div class="modal-actions"><button class="btn btn-ghost" data-action="close-modal">Cancelar</button><button class="btn btn-danger" data-action="confirm-reset">Apagar tudo</button></div></section></div>`;
-    } else if(modal.type==='routine-save'){
-      root.innerHTML=`<div class="modal-backdrop" data-action="close-modal"><section class="modal" role="dialog" aria-modal="true"><h2>Salvar rotina</h2><form id="routine-save-form"><div class="field"><label for="routine-save-name">Nome da rotina</label><input id="routine-save-name" name="name" required value="${escapeHtml(modal.name||'Minha rotina')}"></div><p class="muted small">Os exercícios selecionados serão salvos para você reutilizar em outros dias.</p><div class="modal-actions"><button class="btn btn-ghost" type="button" data-action="close-modal">Cancelar</button><button class="btn btn-primary" type="submit">Salvar rotina</button></div></form></section></div>`;
+    } else if(modal.type==='routine-editor'){
+      const routine=state.routines.find(r=>r.id===modal.id)||state.routines[0];
+      const selected=new Set(modal.payload?.exerciseIds||routine?.exerciseIds||[]);
+      const exerciseGroups=['A','B','C','D'].map(block=>{
+        const exs=state.exercises.filter(e=>(e.block||'D')===block);if(!exs.length)return '';
+        return `<div class="routine-edit-group"><div class="eyebrow">BLOCO ${block}</div>${exs.map(e=>`<label class="check-row"><input type="checkbox" name="exerciseIds" value="${escapeHtml(e.id)}" ${selected.has(e.id)?'checked':''}><span><strong>${escapeHtml(e.name)}</strong><br><span class="muted small">${e.sets} séries · ${escapeHtml(e.reps)} repetições</span></span></label>`).join('')}</div>`;
+      }).join('');
+      root.innerHTML=`<div class="modal-backdrop" data-action="close-modal"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="routine-editor-title"><h2 id="routine-editor-title">Editar rotina</h2><form id="routine-editor-form" data-id="${escapeHtml(routine?.id||'routine-inicial')}"><div class="field"><label for="routine-editor-name">Nome do treino</label><input id="routine-editor-name" name="name" required maxlength="80" value="${escapeHtml(routine?.name||'Minha rotina')}"></div><p class="muted small">Marque todos os exercícios que deseja manter na rotina. Essa seleção continuará salva até você editá-la novamente.</p><div class="routine-edit-list">${exerciseGroups||'<p class="muted">Cadastre exercícios na biblioteca primeiro.</p>'}</div><div class="modal-actions"><button type="button" class="btn btn-ghost" data-action="close-modal">Cancelar</button><button type="submit" class="btn btn-primary">Salvar rotina</button></div></form></section></div>`;
     } else if(modal.type==='routine-name'){
       root.innerHTML=`<div class="modal-backdrop" data-action="close-modal"><section class="modal" role="dialog" aria-modal="true"><h2>Nome do treino</h2><form id="routine-form"><div class="field"><label for="routine-name">Nome</label><input id="routine-name" name="name" required value="${escapeHtml(modal.name||'Treino em blocos')}"></div><div class="modal-actions"><button class="btn btn-ghost" type="button" data-action="close-modal">Cancelar</button><button class="btn btn-primary" type="submit">Continuar</button></div></form></section></div>`;
     }
   }
   function startWorkout(){
+    ensureAudio();
     if(state.active){showToast('Você já tem um treino em andamento. Retome-o para continuar.');state.view='sessao';render();return;}
-    const date=state.setup.date||todayLocal();let chosen=[];
-    if(state.setup.mode==='manual') chosen=state.exercises.filter(e=>(state.setup.selectedIds||[]).includes(e.id));
-    else {const routine=state.routines.find(r=>r.id===(state.setup.selectedRoutineId||'routine-inicial'))||state.routines[0];chosen=state.exercises.filter(e=>routine && routine.exerciseIds.includes(e.id));}
-    if(!chosen.length){showToast('Selecione pelo menos um exercício antes de iniciar.');return;}
-    const selectedRoutine=state.routines.find(r=>r.id===(state.setup.selectedRoutineId||'routine-inicial'))||state.routines[0];
-    const nextName=state.setup.mode==='manual'?'Treino manual':(selectedRoutine?.name||'Treino Inicial em Blocos');
-    state.modal={type:'routine-name',name:nextName, payload:{date,chosen}};render();
+    const date=state.setup.date||todayLocal();
+    const routine=state.routines.find(r=>r.id===(state.setup.selectedRoutineId||'routine-inicial'))||state.routines[0];
+    const chosen=state.exercises.filter(e=>routine && routine.exerciseIds.includes(e.id));
+    if(!chosen.length){showToast('Edite a rotina e selecione pelo menos um exercício.');return;}
+    state.modal={type:'routine-name',name:routine?.name||'Minha rotina',payload:{date,chosen}};renderModal();
   }
   function confirmStart(name){
     const pending=state.modal?.payload;if(!pending)return;
@@ -198,13 +237,31 @@
   }
   function togglePause(){const a=state.active;if(!a)return;if(a.status==='running'){a.elapsedBeforePause=(Number(a.elapsedBeforePause)||0)+(Date.now()-(a.startedAt||Date.now()));a.startedAt=null;a.status='paused';}else{a.startedAt=Date.now();a.status='running';}save();render();}
   function markSet(exId,index,checked){
-    const a=state.active;if(!a)return;const b=currentBlock(a),ex=currentExercise(a);
-    if(!ex||ex.id!==exId||(ex.block||'A')!==b){showToast('Conclua o exercício atual antes de avançar.');render();return;}
-    const set=ex.sets[index];if(!set)return;set.done=checked;
-    if(checked){const remaining=ex.sets.some(s=>!s.done);if(remaining&&ex.rest>0)a.rest={endAt:Date.now()+ex.rest*1000,exerciseId:ex.id};else a.rest=null;}else a.rest=null;
+    ensureAudio();
+    const a=state.active;if(!a)return;
+    const block=currentBlock(a),ex=a.exercises.find(x=>x.id===exId);
+    if(!ex)return;
+    if((ex.block||'A')!==block){showToast('Conclua o bloco atual antes de avançar.');render();return;}
+    const set=ex.sets[index];if(!set)return;
+    if(checked && a.rest?.endAt && a.rest.endAt>Date.now()){
+      showToast('O descanso está em andamento. Aguarde ou toque em “Pular descanso”.');render();return;
+    }
+    const roundIndex=currentRoundIndex(block,a);
+    if(checked && index!==roundIndex){showToast(`Finalize a rodada ${roundIndex+1} em todos os exercícios antes de avançar.`);render();return;}
+    set.done=checked;
+    if(!checked){a.rest=null;}
+    else if(roundComplete(block,index,a)){
+      const hasMore=a.exercises.some(e=>!isExerciseDone(e));
+      if(hasMore){const seconds=roundRestSeconds(block,a);a.rest={endAt:Date.now()+seconds*1000,block,round:index+1,seconds};}
+      else a.rest=null;
+    }else{
+      a.rest=null;
+    }
     save();render();
-    if(isExerciseDone(ex))showToast(`${ex.name} concluído!`);
+    if(checked&&roundComplete(block,index,a))showToast(`Rodada ${index+1} do bloco ${block} concluída. Hora do descanso.`);
+    else if(isExerciseDone(ex))showToast(`${ex.name} concluído!`);
   }
+  
   function finishWorkout(notes){
     const a=state.active;if(!a)return;
     const durationSeconds=getElapsedSeconds(a),done=doneSetCount(a),planned=setCount(a),completedExercises=a.exercises.filter(isExerciseDone).length;
@@ -230,19 +287,16 @@
       case 'new-exercise':state.modal={type:'exercise'};renderModal();break;
       case 'edit-exercise':state.modal={type:'exercise',id};renderModal();break;
       case 'delete-exercise':deleteExercise(id);break;
-      case 'setup-mode':state.setup.mode=buttonEl.dataset.mode;if(state.setup.mode==='manual'&&!(state.setup.selectedIds||[]).length)state.setup.selectedIds=state.exercises.map(e=>e.id);save();render();break;
-      case 'use-routine':state.setup.selectedRoutineId=id;state.setup.mode='routine';save();render();showToast('Rotina selecionada.');break;
-      case 'save-routine':{const ids=(state.setup.selectedIds||[]).filter(x=>state.exercises.some(e=>e.id===x));if(!ids.length){showToast('Selecione pelo menos um exercício.');break;}state.modal={type:'routine-save',name:'Minha rotina',payload:{exerciseIds:ids}};renderModal();break;}
-      case 'delete-routine':if(id==='routine-inicial')break;if(confirm('Excluir esta rotina salva? Os exercícios e treinos anteriores não serão excluídos.')){state.routines=state.routines.filter(r=>r.id!==id);if(state.setup.selectedRoutineId===id)state.setup.selectedRoutineId='routine-inicial';save();render();showToast('Rotina excluída.');}break;
+      case 'edit-routine':{const routine=state.routines.find(r=>r.id===id)||state.routines[0];if(!routine){showToast('Não foi encontrada uma rotina para editar.');break;}state.modal={type:'routine-editor',id:routine.id,payload:{exerciseIds:routine.exerciseIds.slice()}};renderModal();break;}
+      case 'routine-select':break;
       case 'start-workout':startWorkout();break;
       case 'resume-workout':state.view='sessao';if(state.active&&state.active.status==='paused')togglePause();else render();break;
       case 'toggle-pause':togglePause();break;
-      case 'start-rest':{const seconds=Number(buttonEl.dataset.seconds)||60;if(state.active)state.active.rest={endAt:Date.now()+seconds*1000};save();render();break;}
       case 'skip-rest':if(state.active)state.active.rest=null;save();render();break;
       case 'finish-workout':state.modal={type:'finish'};renderModal();break;
       case 'close-modal':state.modal=null;renderModal();break;
       case 'history-detail':state.modal={type:'history',id};renderModal();break;
-      case 'copy-history':{const h=state.history.find(x=>x.id===id);if(!h)break;state.setup.mode='manual';state.setup.selectedIds=h.exercises.map(e=>state.exercises.find(x=>x.id===e.sourceId||x.id===e.id)?.id).filter(Boolean);state.setup.date=todayLocal();state.modal=null;state.view='treinos';save();render();showToast('Exercícios do treino selecionados para uma nova sessão.');break;}
+      case 'copy-history':{const h=state.history.find(x=>x.id===id);if(!h)break;const routine=state.routines.find(r=>r.id===(state.setup.selectedRoutineId||'routine-inicial'))||state.routines[0];if(!h.exercises?.length){showToast('Este registro não contém exercícios para reutilizar.');break;}if(!confirm('Substituir os exercícios da rotina atual pelos exercícios deste treino? O histórico não será alterado.'))break;const ids=h.exercises.map(e=>state.exercises.find(x=>x.id===e.sourceId||x.id===e.id)?.id).filter(Boolean);if(routine){routine.exerciseIds=[...new Set(ids)];routine.name=h.name||routine.name;state.setup.selectedRoutineId=routine.id;}state.setup.date=todayLocal();state.modal=null;state.view='treinos';save();render();showToast('Rotina atualizada usando o treino do histórico.');break;}
       case 'add-weight':state.modal={type:'weight'};renderModal();break;
       case 'delete-weight':deleteWeight(id);break;
       case 'export-json':exportJson();break;
@@ -251,10 +305,12 @@
       case 'confirm-reset':if(confirm('Confirma a exclusão permanente de todos os dados?')){localStorage.removeItem(STORAGE_KEY);state=seedState();render();showToast('Dados apagados.');}break;
     }
   }
+  
   document.addEventListener('click',event=>{
+    ensureAudio();
     const target=event.target.closest('[data-action]');if(!target)return;
     if(target.dataset.action==='close-modal' && target.classList.contains('modal-backdrop') && event.target!==target)return;
-    if(target.type==='submit')return;
+    if(target.type==='submit'&&target.closest('form'))return;
     handleAction(target);
   });
   document.addEventListener('change',event=>{
@@ -262,7 +318,7 @@
     if(el.id==='exercise-search'){state.search=el.value;render();const inp=$('#exercise-search');if(inp){inp.focus();inp.setSelectionRange(inp.value.length,inp.value.length);}return;}
     if(el.id==='block-filter'){state.filterBlock=el.value;render();return;}
     if(el.id==='workout-date'){state.setup.date=el.value||todayLocal();save();return;}
-    if(el.matches('[data-action="select-exercise"]')){if(el.checked){if(!state.setup.selectedIds.includes(el.dataset.id))state.setup.selectedIds.push(el.dataset.id);}else state.setup.selectedIds=state.setup.selectedIds.filter(x=>x!==el.dataset.id);save();const y=window.scrollY;render();window.scrollTo(0,y);return;}
+    if(el.id==='routine-select'){state.setup.selectedRoutineId=el.value;save();render();return;}
     if(el.matches('[data-action="toggle-set"]')){markSet(el.dataset.ex,Number(el.dataset.set),el.checked);return;}
     if(el.matches('[data-action="set-reps"], [data-action="set-weight"]')){const ex=state.active?.exercises.find(x=>x.id===el.dataset.ex),s=ex?.sets[Number(el.dataset.set)];if(s){if(el.dataset.action==='set-reps')s.reps=Number(el.value)||0;else s.weight=el.value;save();}return;}
   });
@@ -285,19 +341,51 @@
       const fd=new FormData(form);finishWorkout(String(fd.get('notes')||'').trim());
     }else if(form.id==='routine-form'){
       const fd=new FormData(form);confirmStart(String(fd.get('name')||'').trim());
-    }else if(form.id==='routine-save-form'){
-      const fd=new FormData(form),ids=state.modal?.payload?.exerciseIds||[];const name=String(fd.get('name')||'').trim();if(!name||!ids.length){showToast('Informe um nome e selecione exercícios.');return;}const routine={id:uid('routine'),name,description:`${ids.length} exercícios selecionados`,exerciseIds:ids.slice()};state.routines.push(routine);state.setup.selectedRoutineId=routine.id;state.setup.mode='routine';state.modal=null;save();render();showToast('Rotina salva para reutilização.');
+    }else if(form.id==='routine-editor-form'){
+      const fd=new FormData(form),name=String(fd.get('name')||'').trim(),ids=[...new Set(fd.getAll('exerciseIds').map(String).filter(id=>state.exercises.some(e=>e.id===id)))];
+      const routine=state.routines.find(r=>r.id===form.dataset.id)||state.routines[0];
+      if(!routine){showToast('Não foi encontrada uma rotina para atualizar.');return;}
+      if(!name){showToast('Informe o nome do treino.');return;}
+      if(!ids.length){showToast('Selecione ao menos um exercício para a rotina.');return;}
+      routine.name=name;routine.description=`${ids.length} exercícios selecionados`;routine.exerciseIds=ids;state.setup.selectedRoutineId=routine.id;state.modal=null;save();render();showToast('Rotina atualizada e salva neste dispositivo.');
     }
   });
   $('#import-file').addEventListener('change',event=>{importJsonFile(event.target.files?.[0]);event.target.value='';});
+  let audioContext=null;
+  function ensureAudio(){
+    try{const AudioCtx=window.AudioContext||window.webkitAudioContext;if(!AudioCtx)return;if(!audioContext)audioContext=new AudioCtx();if(audioContext.state==='suspended')audioContext.resume().catch(()=>{});}catch(e){}
+  }
+  function scheduleRestBeeps(){
+    if(!audioContext)return;
+    const now=audioContext.currentTime;
+    [0,0.38,0.76].forEach((delay,index)=>{
+      const oscillator=audioContext.createOscillator(),gain=audioContext.createGain();
+      oscillator.type='sine';oscillator.frequency.setValueAtTime([740,880,1046][index],now+delay);
+      gain.gain.setValueAtTime(0.0001,now+delay);gain.gain.exponentialRampToValueAtTime(0.24,now+delay+0.025);gain.gain.exponentialRampToValueAtTime(0.0001,now+delay+0.24);
+      oscillator.connect(gain);gain.connect(audioContext.destination);oscillator.start(now+delay);oscillator.stop(now+delay+0.26);
+    });
+  }
+  function playRestAlarm(){
+    // Sound and vibration use browser capabilities; they may be limited when the PWA is suspended/locked.
+    try{
+      ensureAudio();
+      if(audioContext){if(audioContext.state==='suspended')audioContext.resume().then(scheduleRestBeeps).catch(()=>{});else scheduleRestBeeps();}
+    }catch(e){}
+    try{if(navigator.vibrate)navigator.vibrate([220,90,220,90,420]);}catch(e){}
+    try{if('Notification' in window&&Notification.permission==='granted'&&document.visibilityState==='hidden')new Notification('FullBody — descanso concluído',{body:'Seu descanso terminou. Próxima série liberada.'});}catch(e){}
+  }
   function updateLiveTimers(){
     const a=state.active;if(!a)return;
     const timer=$('#workout-timer');if(timer)timer.textContent=fmtDuration(getElapsedSeconds(a));
-    const rest=$('#rest-time');if(rest&&a.rest?.endAt){const seconds=Math.max(0,Math.ceil((a.rest.endAt-Date.now())/1000));rest.textContent=fmtDuration(seconds);if(seconds<=0){a.rest=null;save();render();showToast('Descanso concluído.');}}
+    if(a.rest?.endAt){
+      const seconds=Math.max(0,Math.ceil((a.rest.endAt-Date.now())/1000));
+      const rest=$('#rest-time');if(rest)rest.textContent=fmtDuration(seconds);
+      if(seconds<=0){a.rest=null;save();playRestAlarm();render();showToast('Descanso concluído! Próxima rodada liberada.');}
+    }
   }
   setInterval(updateLiveTimers,1000);
-  // Store a recoverable copy whenever the app is backgrounded or closed.
-  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')save();});
+  // A returning foreground tab checks deadlines that elapsed while browsers throttled background timers.
+  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')save();else updateLiveTimers();});
   window.addEventListener('beforeunload',save);
   if('serviceWorker' in navigator && /^https?:$/.test(location.protocol))window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));
   render();

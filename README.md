@@ -1,53 +1,45 @@
-# FullBody — versão inicial funcional
+# FullBody — versão 1.1.0
 
 Aplicativo pessoal de musculação em formato PWA, em português, com armazenamento local no navegador.
 
-## O que já está incluído
+## Mudanças desta versão
 
-- Os 7 exercícios definidos pelo usuário, distribuídos nos blocos A, B e C.
-- Rotina inicial chamada **Treino Inicial em Blocos**.
-- Fluxo sequencial: cada exercício é executado série a série; o exercício seguinte e o próximo bloco ficam pendentes até as séries anteriores serem concluídas.
-- Treino manual com seleção de exercícios.
-- Criação, seleção e exclusão de rotinas personalizadas reutilizáveis.
-- Cronômetro da sessão, pausa/retomada, descanso por exercício e registro de repetições e cargas por série.
-- Salvamento automático do andamento no armazenamento local do navegador.
-- Finalização com resumo e histórico detalhado.
+- Na sessão, todos os exercícios do bloco atual ficam visíveis ao mesmo tempo.
+- O treino é executado em rodadas: série 1 de cada exercício do bloco, depois descanso; em seguida série 2 de cada exercício, e assim por diante.
+- A série seguinte da rodada só é liberada depois que os exercícios da rodada atual forem marcados. Os próximos blocos são liberados após concluir o bloco atual.
+- Ao terminar o descanso, o aplicativo emite três bipes e tenta vibrar o dispositivo. A capacidade de emitir som/vibração com a tela bloqueada depende do navegador e do sistema; um PWA estático não consegue garantir um alarme em segundo plano em todos os celulares.
+- O botão **Detalhes** do histórico abre o resumo completo do treino.
+- O menu **Preparar treino** usa uma rotina persistente. O botão **Editar rotina** permite alterar o nome e selecionar/deselecionar exercícios; salvar atualiza a rotina atual em vez de criar outra cópia.
+- A rotina salva é local ao navegador, assim como o histórico.
+
+## Recursos incluídos
+
+- Os 7 exercícios iniciais divididos em blocos A, B e C.
+- Cronômetro da sessão, pausa/retomada e temporizador de descanso entre rodadas.
+- Registro de repetições e cargas por série.
+- Salvamento automático do andamento e histórico detalhado.
 - Cadastro, edição e exclusão de exercícios.
-- Perfil pessoal e histórico de peso corporal.
-- Painel de evolução com indicadores e gráficos simples a partir dos dados registrados.
-- Tema claro/escuro.
-- Exportação e importação de backup JSON.
-- Layout responsivo para celular e modo instalável PWA em hospedagem HTTPS.
+- Edição do nome e da lista de exercícios da rotina permanente.
+- Perfil, peso corporal, painel de evolução, tema claro/escuro e backup JSON.
+- Layout responsivo e modo instalável PWA para hospedagem HTTPS.
 
 ## Como testar no computador
 
-1. Extraia o arquivo ZIP.
+1. Extraia o ZIP.
 2. Abra a pasta `FullBody` no VS Code.
-3. Instale/ative a extensão **Live Server** ou use um servidor web local.
-4. Abra `index.html` pelo Live Server. Para testar instalação PWA e funcionamento offline, acesse por `localhost`/HTTPS; abrir o HTML diretamente por `file://` não ativa o service worker.
+3. Use a extensão Live Server ou, nesta pasta, rode `python -m http.server 8000`.
+4. Abra `http://localhost:8000`. Para testar instalação PWA e service worker, use localhost ou HTTPS, não `file://`.
 
-Alternativa com Python, a partir desta pasta:
+## Hospedar no GitHub Pages
 
-```bash
-python -m http.server 8000
-```
+Envie os arquivos da pasta `FullBody` para a raiz de um repositório e, em **Settings → Pages**, escolha **Deploy from a branch**, branch `main` e pasta `/(root)`. O GitHub Pages hospedará os arquivos estáticos do app.
 
-Depois, no computador, abra `http://localhost:8000`. Para testar PWA no celular, hospede os arquivos em um endereço HTTPS (por exemplo, GitHub Pages ou Netlify).
+## Armazenamento, backup e sincronização
 
-## Como colocar no celular
+Os dados de perfil, exercícios, rotina e treinos ficam no `localStorage` do navegador. **GitHub Pages não é um backend e não sincroniza os treinos finalizados entre dispositivos.** Para sincronização automática com servidor é preciso integrar um backend com autenticação e banco de dados, por exemplo Supabase com Auth e Row Level Security. Não publique dados pessoais nem credenciais secretas em um repositório público.
 
-1. Publique os arquivos da pasta em um serviço de hospedagem estática com HTTPS.
-2. Abra a URL no Chrome (Android) ou Safari (iPhone).
-3. Android/Chrome: menu ⋮ → **Instalar aplicativo** ou **Adicionar à tela inicial**.
-4. iPhone/Safari: Compartilhar → **Adicionar à Tela de Início**.
-5. Abra o ícone FullBody. Após a primeira carga, os arquivos do app podem funcionar offline se o cache já tiver sido instalado.
+Até configurar esse backend, use **Configurações → Exportar backup JSON** e **Importar backup JSON** para fazer cópia manual. Guarde o arquivo exportado em local seguro. Limpar os dados do navegador pode apagar os registros.
 
-## Armazenamento e backup
+## Limitação do alarme
 
-Os dados ficam no `localStorage` do navegador do dispositivo. Não há sincronização com servidor nem login. Limpar os dados do navegador, desinstalar em algumas configurações ou perder o dispositivo pode apagar registros. Use **Configurações → Exportar backup JSON** com frequência e guarde o arquivo fora do aparelho. Para recuperar, use **Importar backup JSON**.
-
-## Escopo desta primeira versão
-
-Esta é uma primeira versão funcional em formato PWA, não um aplicativo nativo publicado em lojas. Foram verificados o carregamento da interface, a presença dos 7 exercícios iniciais, o início da sessão, a marcação de séries, a passagem sequencial entre blocos, a finalização/salvamento no histórico e a criação de uma rotina personalizada.
-
-Ainda podem ser acrescentados, em próximas versões, medidas corporais além de peso/altura, edição detalhada de treinos já salvos, comparações avançadas exercício a exercício, recordes pessoais, ilustrações demonstrativas e sincronização entre dispositivos. O armazenamento é local a cada navegador/dispositivo; faça backup regular e não use o app como a única cópia dos seus dados importantes.
+O som é gerado pelo próprio navegador depois que o usuário interage com o aplicativo. O aplicativo tenta vibrar por meio da API de vibração quando disponível. Se o celular bloquear a tela ou suspender a PWA, o navegador pode atrasar timers e impedir o alarme na hora exata. Para alarme garantido com app totalmente em segundo plano, seria necessário outro tipo de implementação (por exemplo, app nativo ou backend de notificações push).
